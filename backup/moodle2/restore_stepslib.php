@@ -5566,7 +5566,18 @@ class restore_move_module_questions_categories extends restore_execution_step {
                     && $originalcontext
                     && has_capability('mod/qbank:view', $originalcontext)
                 ) {
-                    $originalquestions = get_questions_category(question_get_top_category($contextid), false);
+                    // The original context exists on the target site, but a top question category for that
+                    // context is not guaranteed (e.g. orphan state left by admin/cli/fix_orphaned_question_categories.php
+                    // - see MDL-88202 / MDL-88465 - or a partial 4.x -> 5.x migration). question_get_top_category()
+                    // returns false in that case, and get_questions_category() would raise a TypeError that aborts
+                    // the entire restore. Skip this contextid: falling through to the default-bank creation below
+                    // would double-book by creating a second qbank module for an original context that still exists
+                    // on the target. See MDL-88499.
+                    $topcategory = question_get_top_category($contextid);
+                    if (!$topcategory) {
+                        continue;
+                    }
+                    $originalquestions = get_questions_category($topcategory, false);
                     $targetcoursecontext = context_course::instance($this->get_courseid());
                     foreach ($originalquestions as $originalquestion) {
                         $backupids = restore_dbops::get_backup_ids_record(
