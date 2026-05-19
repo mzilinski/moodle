@@ -5566,7 +5566,26 @@ class restore_move_module_questions_categories extends restore_execution_step {
                     && $originalcontext
                     && has_capability('mod/qbank:view', $originalcontext)
                 ) {
-                    $originalquestions = get_questions_category(question_get_top_category($contextid), false);
+                    // MDL-88499: question_get_top_category() returns false for orphan contexts that
+                    // have lost their parent=0 row (e.g. admin/cli/fix_orphaned_question_categories.php
+                    // - see MDL-88202 / MDL-88465 - or a partial 4.x -> 5.x migration), and
+                    // get_questions_category() would then raise a TypeError that aborts the entire
+                    // restore. Falling through to the default-bank creation below would also be wrong:
+                    // the original context still exists on the target, so a second qbank module would
+                    // double-book it. Instead, when the top category is missing, iterate every category
+                    // at this contextid directly - parent!=0 rows may still hold the questions we need
+                    // to rebind, so the loop below can run normally.
+                    $topcategory = question_get_top_category($contextid);
+                    if ($topcategory) {
+                        $originalquestions = get_questions_category($topcategory, false);
+                    } else {
+                        $originalquestions = [];
+                        foreach ($DB->get_records('question_categories', ['contextid' => $contextid]) as $cat) {
+                            foreach (get_questions_category($cat, false, false) as $q) {
+                                $originalquestions[$q->id] = $q;
+                            }
+                        }
+                    }
                     $targetcoursecontext = context_course::instance($this->get_courseid());
                     foreach ($originalquestions as $originalquestion) {
                         $backupids = restore_dbops::get_backup_ids_record(
